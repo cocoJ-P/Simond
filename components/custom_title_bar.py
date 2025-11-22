@@ -8,7 +8,7 @@
 import os
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QLineEdit
 from PySide6.QtCore import Qt, QSize, Signal, QTimer
-from PySide6.QtGui import QIcon, QMouseEvent, QPainter, QColor, QPixmap
+from PySide6.QtGui import QIcon, QMouseEvent, QPainter, QColor, QPixmap, QPainterPath
 
 
 class CustomTitleBar(QWidget):
@@ -19,6 +19,7 @@ class CustomTitleBar(QWidget):
     maximize_clicked = Signal()
     close_clicked = Signal()
     search_text_changed = Signal(str)  # 搜索文本变化信号
+    settings_clicked = Signal()  # 用户设置按钮点击信号
     
     def __init__(self, parent=None, title: str = "Simond 保险箱", logo_path: str = None):
         super().__init__(parent)
@@ -46,13 +47,13 @@ class CustomTitleBar(QWidget):
         
         # 创建水平布局
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 0, 10, 0)  # 设置边距（可自定义）
+        layout.setContentsMargins(10, 0, 0, 0)  # 左边距10，右边距0让按钮顶到右上角
         layout.setSpacing(10)  # 设置间距（可自定义）
         
         # ========== 左侧区域：Logo和标题 ==========
         # 创建Logo标签
         self.logo_label = QLabel()
-        self.logo_label.setFixedSize(24, 24)  # 设置Logo大小
+        self.logo_label.setFixedSize(18, 18)  # 设置Logo大小
         self.logo_label.setScaledContents(True)  # 允许缩放内容
         self.set_logo(self.logo_path)  # 设置Logo
         layout.addWidget(self.logo_label)
@@ -77,7 +78,7 @@ class CustomTitleBar(QWidget):
         
         # 创建搜索框
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("搜索应用、游戏等")
+        self.search_input.setPlaceholderText("搜索文件")
         self.search_input.setFixedHeight(32)
         self.search_input.setStyleSheet("""
             QLineEdit {
@@ -91,7 +92,8 @@ class CustomTitleBar(QWidget):
             }
             QLineEdit:focus {
                 background-color: #3d3d40;
-                border: 1px solid #0078d4;
+                border: none;
+                border-bottom: 3px solid #4CC2FF;
             }
             QLineEdit::placeholder {
                 color: #808080;
@@ -131,9 +133,43 @@ class CustomTitleBar(QWidget):
         # 延迟更新，确保搜索框已正确布局
         QTimer.singleShot(0, update_search_icon_position)
         
-        # 将搜索框容器添加到主布局，设置最小宽度
-        search_container.setMinimumWidth(300)
-        layout.addWidget(search_container, 1)  # 设置拉伸因子为1，使其占据可用空间
+        # 将搜索框容器添加到主布局，设置固定宽度并居中
+        search_container.setFixedWidth(500)  # 减小宽度为400px
+        # 添加左侧弹性空间，使搜索框居中
+        left_spacer = QWidget()
+        left_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        layout.addWidget(left_spacer)
+        # 添加搜索框容器（不设置拉伸因子，保持固定宽度）
+        layout.addWidget(search_container, 0)
+        # 添加中间弹性空间，使搜索框居中，同时为右侧按钮留出空间
+        middle_spacer = QWidget()
+        middle_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        layout.addWidget(middle_spacer)
+        
+        # ========== 用户设置按钮（圆形头像） ==========
+        self.settings_btn = QPushButton()
+        self.settings_btn.setFixedSize(26, 26)  # 圆形按钮，26x26像素
+        self.settings_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2d2d30;
+                border: none;
+                border-radius: 13px;
+                color: #cccccc;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #3d3d40;
+            }
+            QPushButton:pressed {
+                background-color: #1d1d20;
+            }
+        """)
+        # 创建用户头像图标（使用文字，也可以后续替换为图片）
+        # 这里使用"U"作为用户图标占位符，可以后续替换为实际头像
+        self.settings_btn.setText("U")
+        self.settings_btn.clicked.connect(self.settings_clicked.emit)
+        layout.addWidget(self.settings_btn)
         
         # 添加弹性空间，使右侧按钮靠右对齐
         spacer = QWidget()
@@ -141,9 +177,16 @@ class CustomTitleBar(QWidget):
         layout.addWidget(spacer)
         
         # ========== 右侧区域：窗口控制按钮 ==========
+        # 创建按钮容器，用于将按钮顶到右上角
+        button_container = QWidget()
+        button_layout = QHBoxLayout(button_container)
+        button_layout.setContentsMargins(0, 0, 0, 0)  # 右边距为0，顶到右上角
+        button_layout.setSpacing(0)  # 按钮之间无间距
+        button_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
+        
         # 最小化按钮（使用系统颜色）
         self.minimize_btn = QPushButton("−")
-        self.minimize_btn.setFixedSize(30, 30)
+        self.minimize_btn.setFixedSize(46, 32)
         self.minimize_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
@@ -156,11 +199,11 @@ class CustomTitleBar(QWidget):
             }
         """)
         self.minimize_btn.clicked.connect(self.minimize_clicked.emit)
-        layout.addWidget(self.minimize_btn)
+        button_layout.addWidget(self.minimize_btn)
         
         # 最大化/还原按钮（使用系统颜色）
         self.maximize_btn = QPushButton("□")
-        self.maximize_btn.setFixedSize(30, 30)
+        self.maximize_btn.setFixedSize(46, 32)
         self.maximize_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
@@ -173,11 +216,11 @@ class CustomTitleBar(QWidget):
             }
         """)
         self.maximize_btn.clicked.connect(self.maximize_clicked.emit)
-        layout.addWidget(self.maximize_btn)
+        button_layout.addWidget(self.maximize_btn)
         
         # 关闭按钮（使用系统颜色，悬停时使用红色）
         self.close_btn = QPushButton("×")
-        self.close_btn.setFixedSize(30, 30)
+        self.close_btn.setFixedSize(46, 32)
         self.close_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
@@ -188,10 +231,14 @@ class CustomTitleBar(QWidget):
             QPushButton:hover {
                 background-color: #e81123;
                 color: white;
+                border-top-right-radius: 12px;
             }
         """)
         self.close_btn.clicked.connect(self.close_clicked.emit)
-        layout.addWidget(self.close_btn)
+        button_layout.addWidget(self.close_btn)
+        
+        # 将按钮容器添加到主布局，对齐到顶部和右侧
+        layout.addWidget(button_container, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
         
         # 保存鼠标按下位置，用于窗口拖动
         self._drag_position = None
@@ -227,6 +274,43 @@ class CustomTitleBar(QWidget):
         if hasattr(self, 'search_input'):
             self.search_input.setText(text)
     
+    def set_user_avatar(self, avatar_path: str = None, initials: str = "U"):
+        """设置用户头像
+        
+        Args:
+            avatar_path: 头像图片文件路径。如果为None，则使用文字首字母
+            initials: 当没有头像图片时显示的文字（通常是用户名的首字母）
+        """
+        if hasattr(self, 'settings_btn'):
+            if avatar_path and os.path.exists(avatar_path):
+                # 从文件加载头像
+                pixmap = QPixmap(avatar_path)
+                # 缩放图片
+                scaled_pixmap = pixmap.scaled(26, 26, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+                # 创建圆形遮罩
+                circular_pixmap = QPixmap(26, 26)
+                circular_pixmap.fill(Qt.GlobalColor.transparent)
+                painter = QPainter(circular_pixmap)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                # 创建圆形路径
+                path = QPainterPath()
+                path.addEllipse(0, 0, 26, 26)
+                painter.setClipPath(path)
+                # 绘制图片（居中）
+                x = (26 - scaled_pixmap.width()) // 2
+                y = (26 - scaled_pixmap.height()) // 2
+                painter.drawPixmap(x, y, scaled_pixmap)
+                painter.end()
+                # 设置为图标
+                icon = QIcon(circular_pixmap)
+                self.settings_btn.setIcon(icon)
+                self.settings_btn.setIconSize(QSize(26, 26))
+                self.settings_btn.setText("")
+            else:
+                # 使用文字首字母
+                self.settings_btn.setIcon(QIcon())
+                self.settings_btn.setText(initials)
+    
     def set_logo(self, logo_path: str = None):
         """设置Logo图标
         
@@ -239,21 +323,20 @@ class CustomTitleBar(QWidget):
             self.logo_label.setPixmap(pixmap)
         else:
             # 创建一个简单的占位符Logo（蓝色圆角矩形）
-            pixmap = QPixmap(24, 24)
+            pixmap = QPixmap(18, 18)
             pixmap.fill(Qt.GlobalColor.transparent)
             painter = QPainter(pixmap)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             painter.setBrush(QColor(66, 133, 244))  # 蓝色
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawRoundedRect(2, 2, 20, 20, 4, 4)  # 圆角矩形
+            painter.drawRoundedRect(1, 1, 16, 16, 3, 3)  # 圆角矩形
             # 在矩形中心绘制一个简单的"S"字母
             painter.setPen(QColor(255, 255, 255))
             painter.setFont(painter.font())
             font = painter.font()
-            font.setBold(True)
-            font.setPointSize(14)
+            font.setPointSize(11)
             painter.setFont(font)
-            painter.drawText(6, 18, "S")
+            painter.drawText(4, 14, "S")
             painter.end()
             self.logo_label.setPixmap(pixmap)
     
