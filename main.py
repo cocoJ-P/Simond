@@ -7,16 +7,16 @@ Simond 保险箱 (MVP)
 使用 PySide6 实现
 """
 
-import os
-import shutil
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QListView, QFileDialog, 
-    QMessageBox, QToolBar, QFileSystemModel, QVBoxLayout, QHBoxLayout, QWidget
+    QApplication, QMainWindow, QListView, 
+    QFileSystemModel, QVBoxLayout, QHBoxLayout, QWidget
 )
-from PySide6.QtCore import QDir, QSize, Qt, QRect
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QAction, QPainter, QPainterPath, QColor, QPalette
+from PySide6.QtCore import QDir, QSize, Qt, QRectF
+from PySide6.QtGui import QPainter, QPainterPath, QPalette, QPen
+
 from components.custom_title_bar import CustomTitleBar
 from components.custom_sidebar import CustomSidebar
+from components.custom_toolbar import CustomToolbar
 
 
 class VaultWindow(QMainWindow):
@@ -35,14 +35,23 @@ class VaultWindow(QMainWindow):
         """初始化用户界面"""
         # 隐藏系统标题栏，使用自定义标题栏
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
-        self.setGeometry(100, 100, 900, 600)
+        
+        self.setFixedSize(1100, 700)
+        
+        # 居中窗口
+        screen = QApplication.primaryScreen()
+        rect = screen.availableGeometry()
+        self.move(
+            rect.center().x() - 1100 // 2,
+            rect.center().y() - 700 // 2
+        )
         
         # 设置窗口背景为透明，以便绘制圆角
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
         # ========== 创建主容器 ==========
         central_widget = QWidget()
-        central_widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        central_widget.setObjectName("CentralWidget")
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -59,6 +68,7 @@ class VaultWindow(QMainWindow):
         
         # ========== 创建内容区域容器（水平布局：侧边栏 + 主内容） ==========
         content_widget = QWidget()
+        content_widget.setObjectName("ContentWidget")
         content_layout = QHBoxLayout(content_widget)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
@@ -72,11 +82,16 @@ class VaultWindow(QMainWindow):
         self.sidebar.item_clicked.connect(self.on_sidebar_item_clicked)
         
         # ========== 创建主内容区域容器 ==========
-        main_content_widget = QWidget()
+        main_content_widget = MainContentCard()
+        main_content_widget.setObjectName("MainContent")
         main_content_layout = QVBoxLayout(main_content_widget)
         main_content_layout.setContentsMargins(0, 0, 0, 0)
         main_content_layout.setSpacing(0)
         content_layout.addWidget(main_content_widget)
+        
+        # ========== 创建工具栏 ==========
+        self.toolbar = CustomToolbar(self)
+        main_content_layout.addWidget(self.toolbar)
         
         # ========== 创建文件系统模型 ==========
         self.file_model = QFileSystemModel()
@@ -110,6 +125,17 @@ class VaultWindow(QMainWindow):
         
         # 连接双击事件
         self.list_view.doubleClicked.connect(self.on_file_double_clicked)
+
+        # ✨ 关键：让视图本身和 viewport 都透明
+        self.list_view.setStyleSheet("""
+        QListView {
+            background: transparent;
+            border: none;
+        }
+        """)
+        
+        # 连接工具栏按钮信号
+        self.toolbar.view_mode_clicked.connect(self.on_view_mode_clicked)
         
         # 将列表视图添加到主内容区域
         main_content_layout.addWidget(self.list_view)
@@ -117,51 +143,42 @@ class VaultWindow(QMainWindow):
         # ========== 启用窗口级别的拖拽功能 ==========
         # 设置窗口接受拖拽（用于从系统资源管理器拖入文件）
         self.setAcceptDrops(True)
-        
-        # ========== 状态栏：显示当前保险箱路径 ==========
-        self.statusBar().showMessage("尚未选择保险箱文件夹")
-        # 设置状态栏底部圆角样式（使用系统颜色）
-        self.statusBar().setStyleSheet("""
-            QStatusBar {
-                background-color: palette(window);
-                border-bottom-left-radius: 12px;
-                border-bottom-right-radius: 12px;
-            }
-        """)
-    
-    def resizeEvent(self, event):
-        """窗口大小改变事件"""
-        super().resizeEvent(event)
+
+        # # 关键：让主内容区域自身不再画不透明矩形背景
+        # self.setStyleSheet("""
+        # #CentralWidget, #ContentWidget, #MainContent {
+        #     background: transparent;
+        # }
+        # """)
+      
     
     def paintEvent(self, event):
-        """绘制圆角边框和背景（只靠透明背景，不再使用 mask）"""
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-        
-        # 先把整个窗口刷成透明
-        painter.fillRect(self.rect(), Qt.GlobalColor.transparent)
-        
-        # 获取系统调色板颜色
-        palette = self.palette()
-        window_color = palette.color(QPalette.ColorRole.Window)
-        border_color = palette.color(QPalette.ColorRole.Mid)
-        
-        # 绘制圆角矩形背景
-        path = QPainterPath()
-        # 提示：用 QRectF + 半像素能再细腻一点
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+
         rect = self.rect()
-        path.addRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), 12, 12)
-        
-        # 填充背景（使用系统颜色）
-        painter.fillPath(path, window_color)
-        
-        # 绘制边框
-        pen = painter.pen()
-        pen.setColor(border_color)
-        pen.setWidth(1)
+
+        # 使用浮点矩形提升抗锯齿
+        r = QRectF(rect)
+        r.adjust(1, 1, -1, -1)
+
+        radius = 12
+
+        # 系统色
+        window_color = self.palette().color(QPalette.Window)
+        border_color = self.palette().color(QPalette.Mid)
+
+        # 背景
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(window_color)
+        painter.drawRoundedRect(r, radius, radius)
+
+        # 边框
+        pen = QPen(border_color, 1)
         painter.setPen(pen)
-        painter.drawPath(path)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(r, radius, radius)
     
     def toggle_maximize(self):
         """切换最大化/还原窗口"""
@@ -172,29 +189,6 @@ class VaultWindow(QMainWindow):
             self.showMaximized()
             self.title_bar.update_maximize_button(True)
         
-    def choose_vault_dir(self):
-        """选择保险箱根目录"""
-        # 弹出文件夹选择对话框
-        directory = QFileDialog.getExistingDirectory(
-            self,
-            "选择保险箱文件夹",
-            "",  # 默认路径为空，从用户目录开始
-            QFileDialog.Option.ShowDirsOnly
-        )
-        
-        if directory:
-            # 保存路径
-            self.vault_dir = directory
-            
-            # 设置文件系统模型的根路径
-            root_index = self.file_model.setRootPath(directory)
-            
-            # 设置列表视图的根索引，使视图显示该目录内容
-            self.list_view.setRootIndex(root_index)
-            
-            # 更新状态栏显示
-            self.statusBar().showMessage(f"当前保险箱：{self.vault_dir}")
-    
     def on_sidebar_item_clicked(self, item_id: str):
         """处理侧边栏菜单项点击事件"""
         print(f"侧边栏菜单项点击：{item_id}")
@@ -217,96 +211,82 @@ class VaultWindow(QMainWindow):
         
         # 后续可以在这里添加：打开文件、预览、计算哈希等功能
     
-    def dragEnterEvent(self, event: QDragEnterEvent):
-        """处理拖拽进入事件（窗口级别）"""
-        # 只接受包含本地文件路径的拖拽
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-        else:
-            event.ignore()
     
-    def dropEvent(self, event: QDropEvent):
-        """处理文件拖放事件（窗口级别）"""
-        # 获取拖入的文件路径列表
-        urls = event.mimeData().urls()
-        
-        if not urls:
-            event.ignore()
-            return
-        
-        # 检查是否已选择保险箱文件夹
-        if not self.vault_dir:
-            QMessageBox.warning(
-                self,
-                "提示",
-                "请先选择保险箱文件夹"
-            )
-            event.ignore()
-            return
-        
-        # 处理每个拖入的文件
-        copied_count = 0
-        failed_files = []
-        
-        for url in urls:
-            # 获取本地文件路径
-            local_path = url.toLocalFile()
-            
-            # 检查是否为有效文件路径
-            if not local_path or not os.path.isfile(local_path):
-                continue
-            
-            try:
-                # 获取文件名
-                file_name = os.path.basename(local_path)
-                dest_path = os.path.join(self.vault_dir, file_name)
-                
-                # 复制文件到保险箱目录
-                # 注意：这里直接覆盖同名文件（MVP 阶段）
-                # 后续可以扩展：检查重名、添加时间戳、询问用户等
-                shutil.copy2(local_path, dest_path)
-                copied_count += 1
-                
-            except Exception as e:
-                # 记录失败的文件
-                failed_files.append((os.path.basename(local_path), str(e)))
-        
-        # 显示操作结果
-        if copied_count > 0:
-            # QFileSystemModel 会自动刷新，但为了确保，可以手动触发
-            # 由于使用了 QFileSystemModel，文件系统变化会自动反映到视图中
-            
-            # 如果有失败的文件，显示警告
-            if failed_files:
-                failed_msg = "\n".join([f"{name}: {error}" for name, error in failed_files])
-                QMessageBox.warning(
-                    self,
-                    "部分文件复制失败",
-                    f"成功复制 {copied_count} 个文件\n\n失败的文件：\n{failed_msg}"
-                )
-            else:
-                QMessageBox.information(
-                    self,
-                    "成功",
-                    f"已成功复制 {copied_count} 个文件到保险箱"
-                )
+    def on_view_mode_clicked(self):
+        """处理视图模式按钮点击事件"""
+        # 切换视图模式：图标模式和列表模式
+        current_mode = self.list_view.viewMode()
+        if current_mode == QListView.ViewMode.IconMode:
+            self.list_view.setViewMode(QListView.ViewMode.ListMode)
+            self.toolbar.set_view_mode_text("图标")
         else:
-            if failed_files:
-                failed_msg = "\n".join([f"{name}: {error}" for name, error in failed_files])
-                QMessageBox.critical(
-                    self,
-                    "复制失败",
-                    f"所有文件复制失败：\n{failed_msg}"
-                )
-            else:
-                QMessageBox.warning(
-                    self,
-                    "提示",
-                    "没有有效的文件被拖入"
-                )
-        
-        event.acceptProposedAction()
+            self.list_view.setViewMode(QListView.ViewMode.IconMode)
+            self.toolbar.set_view_mode_text("列表")
 
+
+# 自定义的主内容区域卡片
+class MainContentCard(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setAttribute(Qt.WA_TranslucentBackground)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        r = 12  # 圆角半径
+
+        bg = self.palette().color(QPalette.Base)
+        border_color = self.palette().color(QPalette.Mid)
+
+        # ====== 背景路径 ======
+        path = QPainterPath()
+
+        # 左上圆角
+        path.moveTo(rect.left() + 10, rect.top())
+        path.quadTo(rect.left(), rect.top(), rect.left(), rect.top() + 10)
+
+        # 左边（直线）
+        path.lineTo(rect.left(), rect.bottom() - r)
+
+        # 左下直角
+        path.lineTo(rect.left(), rect.bottom())
+        path.lineTo(rect.right() - r, rect.bottom())
+
+        # 下边（继续到右下圆角起点）
+        path.quadTo(rect.right(), rect.bottom(), rect.right(), rect.bottom() - r)
+
+        # 右边
+        path.lineTo(rect.right(), rect.top())
+
+        # 上边回到起点
+        path.lineTo(rect.left() + r, rect.top())
+
+        # 填充背景
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(bg)
+        painter.drawPath(path)
+
+        # ====== 边框路径（只画上边 + 左边）======
+
+        border = QPainterPath()
+
+        # 左上圆角 10的圆角
+        border.moveTo(rect.left() + 10, rect.top())
+        border.quadTo(rect.left(), rect.top(), rect.left(), rect.top() + 10)
+
+        # 左边直线
+        border.lineTo(rect.left(), rect.bottom())
+
+        # 回到圆角起点，画上边
+        border.moveTo(rect.left() + r - 2, rect.top())
+        border.lineTo(rect.right(), rect.top())
+
+        pen = QPen(border_color, 0.2)
+        painter.setPen(pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawPath(border)
 
 def main():
     """主函数：启动应用程序"""
