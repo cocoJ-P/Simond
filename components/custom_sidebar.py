@@ -10,7 +10,7 @@ import os
 import re
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QSizePolicy, QLabel, QApplication
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPainter, QIcon, QPixmap, QPalette, QColor
+from PySide6.QtGui import QPainter, QIcon, QPixmap, QPalette
 from PySide6.QtSvg import QSvgRenderer
 
 class SidebarItem(QPushButton):
@@ -37,7 +37,6 @@ class SidebarItem(QPushButton):
             QPushButton {
                 background-color: transparent;
                 border: none;
-                text-align: center;
                 color: palette(window-text);
                 border-radius: 6px;
             }
@@ -69,7 +68,7 @@ class SidebarItem(QPushButton):
         # 创建文字标签
         self.text_label = QLabel(self.text, container)
         self.text_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.text_label.setStyleSheet("font-size: 10px; color: palette(window-text);")
+        self.text_label.setStyleSheet("font-size: 10px; color: palette(window-text); font-weight: bold;")
         container_layout.addWidget(self.text_label, alignment=Qt.AlignmentFlag.AlignHCenter)
         
         # 将容器添加到按钮（通过设置按钮的布局）
@@ -81,8 +80,6 @@ class SidebarItem(QPushButton):
     
     def update_icon(self):
         """根据 hover 和选中状态更新图标"""
-        icon = None
-
         app = QApplication.instance()
         if not app:
             return
@@ -104,20 +101,27 @@ class SidebarItem(QPushButton):
 
         idle_color = idle_qcolor.name()
 
+        # 初始化变量
+        icon = None
+        text_color = None
+
         # 选中状态 → 使用系统高亮色
         if self._is_selected and self.icon_filled_path:
             if os.path.exists(self.icon_filled_path):
                 icon = load_svg_icon_with_color(self.icon_filled_path, highlight_color, 28)
+                text_color = highlight_color
 
         # hover 未选中 → 使用系统文本色（浅色模式深黑，深色模式白）
         elif self._is_hovered and not self._is_selected and self.icon_regular_path:
             if os.path.exists(self.icon_regular_path):
                 icon = load_svg_icon_with_color(self.icon_regular_path, hover_color, 28)
+                text_color = hover_color
 
         # idle → 使用系统灰色
         elif self.icon_regular_path:
             if os.path.exists(self.icon_regular_path):
                 icon = load_svg_icon_with_color(self.icon_regular_path, idle_color, 28)
+                text_color = idle_color
 
         # 设置到 QLabel
         if hasattr(self, 'icon_label') and icon:
@@ -125,40 +129,10 @@ class SidebarItem(QPushButton):
             self.icon_label.setPixmap(pixmap)
         elif hasattr(self, 'icon_label'):
             self.icon_label.clear()
-
-    # def update_icon(self):
-    #     icon = None
         
-    #     palette = QApplication.instance().palette()
-
-    #     # 继续使用系统高亮色作为 “选中”
-    #     highlight_color = palette.color(QPalette.ColorRole.Highlight).name()
-
-    #     # 🔵 蓝色层级（固定值）
-    #     hover_blue = "#3366CC"     # 深蓝（原黑）
-    #     idle_blue = "#7DA7D9"      # 浅蓝（原灰）
-
-    #     # 选中状态 → 高亮蓝
-    #     if self._is_selected and self.icon_filled_path:
-    #         if os.path.exists(self.icon_filled_path):
-    #             icon = load_svg_icon_with_color(self.icon_filled_path, highlight_color, 28)
-
-    #     # hover 未选中 → 深蓝
-    #     elif self._is_hovered and not self._is_selected and self.icon_regular_path:
-    #         if os.path.exists(self.icon_regular_path):
-    #             icon = load_svg_icon_with_color(self.icon_regular_path, hover_blue, 28)
-
-    #     # idle → 浅蓝
-    #     elif self.icon_regular_path:
-    #         if os.path.exists(self.icon_regular_path):
-    #             icon = load_svg_icon_with_color(self.icon_regular_path, idle_blue, 28)
-
-    #     # 设置图标
-    #     if hasattr(self, 'icon_label') and icon:
-    #         pixmap = icon.pixmap(28, 28)
-    #         self.icon_label.setPixmap(pixmap)
-    #     elif hasattr(self, 'icon_label'):
-    #         self.icon_label.clear()
+        # 更新文字标签颜色，使其与图标颜色一致
+        if hasattr(self, 'text_label') and text_color and not self._is_selected:
+            self.text_label.setStyleSheet(f"font-size: 10px; color: {text_color}; font-weight: bold;")
 
     
     # 针对按钮图标的样式监控，根据鼠标是否进入或离开，更新图标显示
@@ -184,8 +158,6 @@ class SidebarItem(QPushButton):
                 QPushButton {
                     background-color: palette(Window);
                     border: none;
-                    text-align: center;
-                    font-size: 10px;
                     color: palette(window-text);
                     border-radius: 6px;
                 }
@@ -200,9 +172,9 @@ class SidebarItem(QPushButton):
                 QPushButton {
                     background-color: transparent;
                     border: none;
-                    text-align: center;
                     color: palette(window-text);
                     border-radius: 6px;
+
                 }
    
                 QPushButton:pressed {
@@ -211,8 +183,7 @@ class SidebarItem(QPushButton):
             """
             self.setStyleSheet(style)
             if hasattr(self, 'text_label'):
-                # 未选中时显示文字标签
-                self.text_label.setStyleSheet("font-size: 10px; color: palette(window-text);")
+                # 未选中时显示文字标签（颜色由 update_icon() 控制）
                 self.text_label.show()
 
 
