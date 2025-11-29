@@ -10,26 +10,24 @@ import os
 import re
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QSizePolicy, QLabel, QApplication
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPainter, QIcon, QPixmap, QPalette
+from PySide6.QtGui import QPainter, QIcon, QPixmap, QPalette, QColor
 from PySide6.QtSvg import QSvgRenderer
 
 class SidebarItem(QPushButton):
     """侧边栏菜单项"""
     
     def __init__(self, text: str,  
-                 icon_regular_path: str = None, icon_filled_path: str = None,
-                 vertical_layout: bool = True):
+                 icon_regular_path: str = None, icon_filled_path: str = None):
         super().__init__()
         self.text = text
         self._is_selected = False
         self._is_hovered = False
-        self.vertical_layout = vertical_layout
         
         # 图标路径
         self.icon_regular_path = icon_regular_path
         self.icon_filled_path = icon_filled_path
         
-        self.setFixedHeight(70)
+        self.setFixedHeight(60)
     
         self.setup_vertical_layout()
      
@@ -43,9 +41,7 @@ class SidebarItem(QPushButton):
                 color: palette(window-text);
                 border-radius: 6px;
             }
-            QPushButton:hover {
-                background-color: palette(mid);
-            }
+          
             QPushButton:pressed {
                 background-color: palette(light);
             }
@@ -81,52 +77,91 @@ class SidebarItem(QPushButton):
         btn_layout.setContentsMargins(0, 0, 0, 0)
         btn_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         btn_layout.addWidget(container, alignment=Qt.AlignmentFlag.AlignCenter)
-    
-    def _get_system_color(self, role: QPalette.ColorRole) -> str:
-        """获取系统颜色并转换为十六进制字符串"""
-        app = QApplication.instance()
-        if app:
-            palette = app.palette()
-            system_color = palette.color(role)
-            return system_color.name()
-        else:
-            # 如果没有应用程序实例，使用默认颜色
-            defaults = {
-                QPalette.ColorRole.Highlight: "#0078D4",  # 默认蓝色
-                QPalette.ColorRole.HighlightedText: "#FFFFFF",  # 默认白色
-                QPalette.ColorRole.WindowText: "#E0E0E0",  # 默认浅灰色（更白）
-            }
-            return defaults.get(role, "#E0E0E0")
+
     
     def update_icon(self):
         """根据 hover 和选中状态更新图标"""
         icon = None
+
+        app = QApplication.instance()
+        if not app:
+            return
+
+        palette = QApplication.instance().palette()
         
-        # 获取系统颜色
-        highlight_color = self._get_system_color(QPalette.ColorRole.Highlight)  # 系统高亮色（通常是蓝色）
-        highlighted_text_color = self._get_system_color(QPalette.ColorRole.HighlightedText)  # 高亮文本色（通常是白色）
-        default_color = self._get_system_color(QPalette.ColorRole.WindowText)  # 窗口文本色（通常比灰色更白）
-        
-        # 如果处于选中状态，使用 filled 图标并应用系统高亮颜色
+        highlight_color = palette.color(QPalette.ColorRole.Highlight).name()
+        hover_color = palette.color(QPalette.ColorRole.WindowText).name()     # hover 时
+        # 判断当前是深色主题还是浅色主题
+        window_color = palette.color(QPalette.ColorRole.Window)
+        is_dark_theme = window_color.lightness() < 128   # 0~255，越小越暗
+
+        if is_dark_theme:
+            # 深色模式：用更亮一点的灰（Midlight）
+            idle_qcolor = palette.color(QPalette.ColorRole.Midlight)
+        else:
+            # 浅色模式：用正常灰（Mid）
+            idle_qcolor = palette.color(QPalette.ColorRole.Mid)
+
+        idle_color = idle_qcolor.name()
+
+        # 选中状态 → 使用系统高亮色
         if self._is_selected and self.icon_filled_path:
             if os.path.exists(self.icon_filled_path):
                 icon = load_svg_icon_with_color(self.icon_filled_path, highlight_color, 28)
-        # 如果处于 hover 状态且未选中，使用 regular 图标并应用高亮文本颜色
+
+        # hover 未选中 → 使用系统文本色（浅色模式深黑，深色模式白）
         elif self._is_hovered and not self._is_selected and self.icon_regular_path:
             if os.path.exists(self.icon_regular_path):
-                icon = load_svg_icon_with_color(self.icon_regular_path, highlighted_text_color, 28)
-        # 否则使用 regular 图标，未选中且未hover时使用窗口文本颜色（更白）
+                icon = load_svg_icon_with_color(self.icon_regular_path, hover_color, 28)
+
+        # idle → 使用系统灰色
         elif self.icon_regular_path:
             if os.path.exists(self.icon_regular_path):
-                icon = load_svg_icon_with_color(self.icon_regular_path, default_color, 28)
-        
-        # 根据布局方式设置图标（垂直布局）
+                icon = load_svg_icon_with_color(self.icon_regular_path, idle_color, 28)
+
+        # 设置到 QLabel
         if hasattr(self, 'icon_label') and icon:
             pixmap = icon.pixmap(28, 28)
             self.icon_label.setPixmap(pixmap)
         elif hasattr(self, 'icon_label'):
             self.icon_label.clear()
+
+    # def update_icon(self):
+    #     icon = None
+        
+    #     palette = QApplication.instance().palette()
+
+    #     # 继续使用系统高亮色作为 “选中”
+    #     highlight_color = palette.color(QPalette.ColorRole.Highlight).name()
+
+    #     # 🔵 蓝色层级（固定值）
+    #     hover_blue = "#3366CC"     # 深蓝（原黑）
+    #     idle_blue = "#7DA7D9"      # 浅蓝（原灰）
+
+    #     # 选中状态 → 高亮蓝
+    #     if self._is_selected and self.icon_filled_path:
+    #         if os.path.exists(self.icon_filled_path):
+    #             icon = load_svg_icon_with_color(self.icon_filled_path, highlight_color, 28)
+
+    #     # hover 未选中 → 深蓝
+    #     elif self._is_hovered and not self._is_selected and self.icon_regular_path:
+    #         if os.path.exists(self.icon_regular_path):
+    #             icon = load_svg_icon_with_color(self.icon_regular_path, hover_blue, 28)
+
+    #     # idle → 浅蓝
+    #     elif self.icon_regular_path:
+    #         if os.path.exists(self.icon_regular_path):
+    #             icon = load_svg_icon_with_color(self.icon_regular_path, idle_blue, 28)
+
+    #     # 设置图标
+    #     if hasattr(self, 'icon_label') and icon:
+    #         pixmap = icon.pixmap(28, 28)
+    #         self.icon_label.setPixmap(pixmap)
+    #     elif hasattr(self, 'icon_label'):
+    #         self.icon_label.clear()
+
     
+    # 针对按钮图标的样式监控，根据鼠标是否进入或离开，更新图标显示
     def enterEvent(self, event):
         """鼠标进入事件（hover）"""
         self._is_hovered = True
@@ -154,13 +189,12 @@ class SidebarItem(QPushButton):
                     color: palette(window-text);
                     border-radius: 6px;
                 }
-                QPushButton:hover {
-                    background-color: palette(light);
-                }
+          
             """
             self.setStyleSheet(style)
-            if self.vertical_layout and hasattr(self, 'text_label'):
-                self.text_label.setStyleSheet("font-size: 10px; color: palette(window-text);")
+            if hasattr(self, 'text_label'):
+                # 选中时隐藏文字标签，只显示图标
+                self.text_label.hide()
         else:
             style = """
                 QPushButton {
@@ -170,16 +204,16 @@ class SidebarItem(QPushButton):
                     color: palette(window-text);
                     border-radius: 6px;
                 }
-                QPushButton:hover {
-                    background-color: rgb(69, 69, 69);
-                }
+   
                 QPushButton:pressed {
                     background-color: palette(mid);
                 }
             """
             self.setStyleSheet(style)
-            if self.vertical_layout and hasattr(self, 'text_label'):
+            if hasattr(self, 'text_label'):
+                # 未选中时显示文字标签
                 self.text_label.setStyleSheet("font-size: 10px; color: palette(window-text);")
+                self.text_label.show()
 
 
 class CustomSidebar(QWidget):
@@ -198,8 +232,8 @@ class CustomSidebar(QWidget):
     
     def init_ui(self):
         """初始化侧边栏界面"""
-        # 设置侧边栏宽度（默认200像素）
-        self.setFixedWidth(100)
+        # 设置侧边栏宽度（默认70像素）
+        self.setFixedWidth(70)
         
         # 设置背景色（使用系统颜色）
         self.setStyleSheet("""
@@ -224,8 +258,7 @@ class CustomSidebar(QWidget):
         home_item = SidebarItem(
             "主页", 
             icon_regular_path=home_icon_regular,
-            icon_filled_path=home_icon_filled,
-            vertical_layout=True
+            icon_filled_path=home_icon_filled
         )
         home_item.clicked.connect(lambda: self.on_item_clicked("home", home_item))
         self.items["home"] = home_item
@@ -237,8 +270,7 @@ class CustomSidebar(QWidget):
         local_item = SidebarItem(
             "本地", 
             icon_regular_path=local_icon_regular,
-            icon_filled_path=local_icon_filled,
-            vertical_layout=True
+            icon_filled_path=local_icon_filled
         )
         local_item.clicked.connect(lambda: self.on_item_clicked("local", local_item))
         self.items["local"] = local_item
@@ -250,8 +282,7 @@ class CustomSidebar(QWidget):
         my_space_item = SidebarItem(
             "我的空间", 
             icon_regular_path=my_space_icon_regular,
-            icon_filled_path=my_space_icon_filled,
-            vertical_layout=True
+            icon_filled_path=my_space_icon_filled
         )
         my_space_item.clicked.connect(lambda: self.on_item_clicked("my_space", my_space_item))
         self.items["my_space"] = my_space_item
@@ -263,8 +294,7 @@ class CustomSidebar(QWidget):
         in_progress_item = SidebarItem(
             "进行中", 
             icon_regular_path=in_progress_icon_regular,
-            icon_filled_path=in_progress_icon_filled,
-            vertical_layout=True
+            icon_filled_path=in_progress_icon_filled
         )
         in_progress_item.clicked.connect(lambda: self.on_item_clicked("in_progress", in_progress_item))
         self.items["in_progress"] = in_progress_item
@@ -282,8 +312,7 @@ class CustomSidebar(QWidget):
         settings_item = SidebarItem(
             "工作台", 
             icon_regular_path=settings_icon_regular,
-            icon_filled_path=settings_icon_filled,
-            vertical_layout=True
+            icon_filled_path=settings_icon_filled
         )
         settings_item.clicked.connect(lambda: self.on_item_clicked("settings", settings_item))
         self.items["settings"] = settings_item
@@ -308,31 +337,6 @@ class CustomSidebar(QWidget):
             self.items[item_id].set_selected(True)
             self.current_item = item_id
     
-    def add_item(self, item_id: str, text: str, icon_text: str = ""):
-        """动态添加菜单项"""
-        if item_id in self.items:
-            return
-        
-        item = SidebarItem(text, icon_text)
-        item.clicked.connect(lambda: self.on_item_clicked(item_id, item))
-        self.items[item_id] = item
-        
-        # 找到弹性空间之前的位置插入
-        layout = self.layout()
-        spacer_index = layout.count() - 2  # 弹性空间在倒数第二个位置
-        layout.insertWidget(spacer_index, item)
-    
-    def remove_item(self, item_id: str):
-        """移除菜单项"""
-        if item_id in self.items:
-            item = self.items[item_id]
-            self.layout().removeWidget(item)
-            item.deleteLater()
-            del self.items[item_id]
-            
-            # 如果移除的是当前选中项，切换到主页
-            if self.current_item == item_id:
-                self.set_current_item("home")
 
 def load_svg_icon_with_color(svg_path: str, color: str, size: int = 20) -> QIcon:
     """加载 SVG 图标并应用指定颜色"""
